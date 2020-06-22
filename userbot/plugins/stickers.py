@@ -1,406 +1,384 @@
-"""Make / Download Telegram Sticker Packs without installing Third Party applications
-Available Commands:
-.kangsticker [Optional Emoji]
-.packinfo
-.getsticker"""
-from telethon import events
-from io import BytesIO
-from PIL import Image
+  
 import asyncio
-import datetime
-from collections import defaultdict
-import math
+import io
 import os
-import requests
-import zipfile
-from telethon.errors.rpcerrorlist import StickersetInvalidError
-from telethon.errors import MessageNotModifiedError
-from telethon.tl.functions.account import UpdateNotifySettingsRequest
-from telethon.tl.functions.messages import GetStickerSetRequest
-from telethon.tl.types import (
-    DocumentAttributeFilename,
-    DocumentAttributeSticker,
-    InputMediaUploadedDocument,
-    InputPeerNotifySettings,
-    InputStickerSetID,
-    InputStickerSetShortName,
-    MessageMediaPhoto
-)
-from userbot.utils import admin_cmd
-from userbot import ALIVE_NAME
+from datetime import datetime
+from pathlib import Path
+from typing import ClassVar, Optional, Set, Tuple
 
-DEFAULTUSER = str(ALIVE_NAME) if ALIVE_NAME else "IndianBot"
-FILLED_UP_DADDY = "Invalid pack selected."
+import telethon as tg
 
-@borg.on(admin_cmd(pattern="kang ?(.*)"))
-async def _(event):
-    if event.fwd_from:
-        return
-    if not event.is_reply:
-        await event.edit("Reply to a photo to add to my personal sticker pack.")
-        return
-    reply_message = await event.get_reply_message()
-    sticker_emoji = "🔥"
-    input_str = event.pattern_match.group(1)
-    if input_str:
-        sticker_emoji = input_str
+from .. import command, module, util
 
-    user = await bot.get_me()
-    if not user.first_name:
-        user.first_name = user.id
-    pack = 1
-    userid = event.from_id
-    #packname = f"IndiaBhai™keStickers"
-    #packshortname = f"IndianBot_{userid}_ns"  # format: Uni_Borg_userid
-    if userid == 953414679:
-        packname = f"IndianBhaikeStickers"
-        packshortname = "IndianBhai_ke_locker_me"
-    else:
-        packname = f"{DEFAULTUSER}'s IndianBot Vol.{pack}"
-        packshortname = f"IndianBot_{userid}_kang"
-    await event.edit("`Look dat way,it's a gurl!\nMeanwhile, lemme kang this stcker over hehe ヽ༼ ಠ益ಠ ༽ﾉ`")
+PNG_MAGIC = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"
 
-    is_a_s = is_it_animated_sticker(reply_message)
-    file_ext_ns_ion = "@IndianArMyGiveaway.png"
-    file = await borg.download_file(reply_message.media)
-    uploaded_sticker = None
-    if is_a_s:
-        file_ext_ns_ion = "AnimatedSticker.tgs"
-        uploaded_sticker = await borg.upload_file(file, file_name=file_ext_ns_ion)
-        if userid == 953414679:
-            packname = f"IndiaBhaikeAnimeted"
-            packshortname = "IndianBhai_ke_Animated"
-        else:
-            packname = f"{DEFAULTUSER}'s IndianBot Animated Vol.{pack}"
-            packshortname = f"IndianBot_{userid}" # format: Uni_Borg_userid
-    elif not is_message_image(reply_message):
-        await event.edit("Invalid message type")
-        return
-    else:
-        with BytesIO(file) as mem_file, BytesIO() as sticker:
-            resize_image(mem_file, sticker)
-            sticker.seek(0)
-            uploaded_sticker = await borg.upload_file(sticker, file_name=file_ext_ns_ion)
-
-    await event.edit("Processing this sticker. Please Wait!")
-
-    async with borg.conversation("@Stickers") as bot_conv:
-        now = datetime.datetime.now()
-        dt = now + datetime.timedelta(minutes=1)
-        if not await stickerset_exists(bot_conv, packshortname):
-            await event.edit("`Brewing a new pack! ヽ(´▽｀)ノ`")
-            await silently_send_message(bot_conv, "/cancel")
-            if is_a_s:
-                response = await silently_send_message(bot_conv, "/newanimated")
-            else:
-                response = await silently_send_message(bot_conv, "/newpack")
-            if "Yay!" not in response.text:
-                await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                return
-            response = await silently_send_message(bot_conv, packname)
-            if not response.text.startswith("Alright!"):
-                await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                return
-            w = await bot_conv.send_file(
-                file=uploaded_sticker,
-                allow_cache=False,
-                force_document=True
-            )
-            response = await bot_conv.get_response()
-            if "Sorry" in response.text:
-                await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                return
-            await silently_send_message(bot_conv, sticker_emoji)
-            await silently_send_message(bot_conv, "/publish")
-            response = await silently_send_message(bot_conv, f"<{packname}>")
-            await silently_send_message(bot_conv, "/skip")
-            response = await silently_send_message(bot_conv, packshortname)
-            if response.text == "Sorry, this short name is already taken.":
-                await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                return
-        else:
-            await silently_send_message(bot_conv, "/cancel")
-            await silently_send_message(bot_conv, "/addsticker")
-            await silently_send_message(bot_conv, packshortname)
-            await bot_conv.send_file(
-                file=uploaded_sticker,
-                allow_cache=False,
-                force_document=True
-            )
-            response = await bot_conv.get_response()
-            if response.text == FILLED_UP_DADDY:
-                while response.text == FILLED_UP_DADDY:
-                    pack += 1
-                    prevv = int(pack) - 1
-                    packname = f"{DEFAULTUSER}'s IndianBot Vol.{pack}"
-                    packshortname = f"Vol_{pack}_with_{userid}"
-                    #if userid == 948408212:
-                       # packname = f"{user.first_name}'s IndianBot Vol.{pack}"
-                       # packshortname = "Vol._{pack}_IndianBhai_ke_locker_me"
-                   # else:
-                       # packname = f"Vol._{pack}_IndianBot{userid}"
-                        #packshortname = f"Vol._{pack}_IndianBot_{userid}_ns"
-                    if not await stickerset_exists(bot_conv, packshortname):
-                        await event.edit("**Pack No. **" + str(prevv) + "** full! Making a new Pack, Vol. **" + str(pack))
-                        if is_a_s:
-                            response = await silently_send_message(bot_conv, "/newanimated")
-                        else:
-                            response = await silently_send_message(bot_conv, "/newpack")
-                        if "Yay!" not in response.text:
-                            await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                            return
-                        response = await silently_send_message(bot_conv, packname)
-                        if not response.text.startswith("Alright!"):
-                            await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                            return
-                        w = await bot_conv.send_file(
-                            file=uploaded_sticker,
-                            allow_cache=False,
-                            force_document=True
-                        )
-                        response = await bot_conv.get_response()
-                        if "Sorry" in response.text:
-                            await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                            return
-                        await silently_send_message(bot_conv, sticker_emoji)
-                        await silently_send_message(bot_conv, "/publish")
-                        response = await silently_send_message(bot_conv, f"<{packname}>")
-                        await silently_send_message(bot_conv, "/skip")
-                        response = await silently_send_message(bot_conv, packshortname)
-                        if response.text == "Sorry, this short name is already taken.":
-                            await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                            return
-                    else:
-                        await event.edit("Pack No. " + str(prevv) + " full! Switching to Vol. " + str(pack))
-                        await silently_send_message(bot_conv, "/addsticker")
-                        await silently_send_message(bot_conv, packshortname)                                                                            
-                        await bot_conv.send_file(
-                            file=uploaded_sticker,
-                            allow_cache=False,
-                            force_document=True
-                        )
-                        response = await bot_conv.get_response()
-                        if "Sorry" in response.text:
-                            await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                            return
-                        await silently_send_message(bot_conv, sticker_emoji)
-                        await silently_send_message(bot_conv, "/done")
-            else:
-                if "Sorry" in response.text:
-                    await event.edit(f"**FAILED**! @Stickers replied: {response.text}")
-                    return
-                await silently_send_message(bot_conv, response)
-                await silently_send_message(bot_conv, sticker_emoji)
-                await silently_send_message(bot_conv, "/done")
-    await event.edit(f"sticker added! Your pack can be found [here](t.me/addstickers/{packshortname})")
+# Sticker bot info and return error strings
+STICKER_BOT_USERNAME = "Stickers"
 
 
-@borg.on(admin_cmd(pattern="packinfo"))
-async def _(event):
-    if event.fwd_from:
-        return
-    if not event.is_reply:
-        await event.edit("Reply to any sticker to get it's pack info.")
-        return
-    rep_msg = await event.get_reply_message()
-    if not rep_msg.document:
-        await event.edit("Reply to any sticker to get it's pack info.")
-        return
-    stickerset_attr_s = rep_msg.document.attributes
-    stickerset_attr = find_instance(stickerset_attr_s, DocumentAttributeSticker)
-    if not stickerset_attr.stickerset:
-        await event.edit("sticker does not belong to a pack.")
-        return
-    get_stickerset = await borg(
-        GetStickerSetRequest(
-            InputStickerSetID(
-                id=stickerset_attr.stickerset.id,
-                access_hash=stickerset_attr.stickerset.access_hash
-            )
-        )
-    )
-    pack_emojis = []
-    for document_sticker in get_stickerset.packs:
-        if document_sticker.emoticon not in pack_emojis:
-            pack_emojis.append(document_sticker.emoticon)
-    await event.edit(f"**Sticker Title:** `{get_stickerset.set.title}\n`"
-                     f"**Sticker Short Name:** `{get_stickerset.set.short_name}`\n"
-                     f"**Official:** `{get_stickerset.set.official}`\n"
-                     f"**Archived:** `{get_stickerset.set.archived}`\n"
-                     f"**Stickers In Pack:** `{len(get_stickerset.packs)}`\n"
-                     f"**Emojis In Pack:** {' '.join(pack_emojis)}")
+class LengthMismatchError(Exception):
+    pass
 
 
-@borg.on(admin_cmd(pattern="getsticker ?(.*)"))
-async def _(event):
-    if event.fwd_from:
-        return
-    input_str = event.pattern_match.group(1)
-    if not os.path.isdir(Config.TMP_DOWNLOAD_DIRECTORY):
-        os.makedirs(Config.TMP_DOWNLOAD_DIRECTORY)
-    if event.reply_to_msg_id:
-        reply_message = await event.get_reply_message()
-        # https://gist.github.com/udf/e4e3dbb2e831c8b580d8fddd312714f7
-        if not reply_message.sticker:
-            return
-        sticker = reply_message.sticker
-        sticker_attrib = find_instance(sticker.attributes, DocumentAttributeSticker)
-        if not sticker_attrib.stickerset:
-            await event.reply("This sticker is not part of a pack")
-            return
-        is_a_s = is_it_animated_sticker(reply_message)
-        file_ext_ns_ion = "webp"
-        file_caption = "https://t.me/RoseSupport/33801"
-        if is_a_s:
-            file_ext_ns_ion = "tgs"
-            file_caption = "Forward the ZIP file to @AnimatedStickersRoBot to get lottIE JSON containing the vector information."
-        sticker_set = await borg(GetStickerSetRequest(sticker_attrib.stickerset))
-        pack_file = os.path.join(Config.TMP_DOWNLOAD_DIRECTORY, sticker_set.set.short_name, "pack.txt")
-        if os.path.isfile(pack_file):
-            os.remove(pack_file)
-        # Sticker emojis are retrieved as a mapping of
-        # <emoji>: <list of document ids that have this emoji>
-        # So we need to build a mapping of <document id>: <list of emoji>
-        # Thanks, Durov
-        emojis = defaultdict(str)
-        for pack in sticker_set.packs:
-            for document_id in pack.documents:
-                emojis[document_id] += pack.emoticon
-        async def download(sticker, emojis, path, file):
-            await borg.download_media(sticker, file=os.path.join(path, file))
-            with open(pack_file, "a") as f:
-                f.write(f"{{'image_file': '{file}','emojis':{emojis[sticker.id]}}},")
-        pending_tasks = [
-            asyncio.ensure_future(
-                download(document, emojis, Config.TMP_DOWNLOAD_DIRECTORY + sticker_set.set.short_name, f"{i:03d}.{file_ext_ns_ion}")
-            ) for i, document in enumerate(sticker_set.documents)
+class StickerModule(module.Module):
+    name: ClassVar[str] = "Sticker"
+    db: util.db.AsyncDB
+    settings_db: util.db.AsyncDB
+
+    async def on_load(self):
+        self.db = self.bot.get_db("stickers")
+        self.settings_db = self.bot.get_db("sticker_settings")
+
+    async def add_sticker(
+        self,
+        sticker_data: tg.hints.FileLike,
+        pack_name: str,
+        emoji: str = "❓",
+        *,
+        target: str = STICKER_BOT_USERNAME,
+    ) -> Tuple[bool, str]:
+        commands = [
+            # We don't check this response because it's just a precautionary measure
+            # Could be either failure (most likely) or success
+            ("text", "/cancel", None),
+            ("text", "/addsticker", "Choose the sticker pack"),
+            ("text", pack_name, "send me the sticker"),
+            ("file", sticker_data, "send me an emoji"),
+            ("text", emoji, "added your sticker"),
+            ("text", "/done", "done"),
         ]
-        await event.edit(f"Downloading {sticker_set.set.count} sticker(s) to .{Config.TMP_DOWNLOAD_DIRECTORY}{sticker_set.set.short_name}...")
-        num_tasks = len(pending_tasks)
-        while 1:
-            done, pending_tasks = await asyncio.wait(pending_tasks, timeout=2.5,
-                return_when=asyncio.FIRST_COMPLETED)
+
+        success = False
+        before = datetime.now()
+
+        async with self.bot.client.conversation(target) as conv:
+
+            async def reply_and_ack():
+                # Wait for a response
+                resp = await conv.get_response()
+                # Ack the response to suppress its notification
+                await conv.mark_read()
+
+                return resp
+
             try:
-                await event.edit(
-                    f"Downloaded {num_tasks - len(pending_tasks)}/{sticker_set.set.count}")
-            except MessageNotModifiedError:
-                pass
-            if not pending_tasks:
-                break
-        await event.edit("Downloading to my local completed")
-        # https://gist.github.com/udf/e4e3dbb2e831c8b580d8fddd312714f7
-        directory_name = Config.TMP_DOWNLOAD_DIRECTORY + sticker_set.set.short_name
-        zipf = zipfile.ZipFile(directory_name + ".zip", "w", zipfile.ZIP_DEFLATED)
-        zipdir(directory_name, zipf)
-        zipf.close()
-        await borg.send_file(
-            event.chat_id,
-            directory_name + ".zip",
-            caption=file_caption,
-            force_document=True,
-            allow_cache=False,
-            reply_to=event.message.id,
-            progress_callback=progress
-        )
-        try:
-            os.remove(directory_name + ".zip")
-            os.remove(directory_name)
-        except:
-            pass
-        await event.edit("task Completed")
-        await asyncio.sleep(3)
-        await event.delete()
-    else:
-        await event.edit("TODO: Not Implemented")
+                for cmd_type, data, expected_resp in commands:
+                    if cmd_type == "text":
+                        await conv.send_message(data)
+                    elif cmd_type == "file":
+                        await conv.send_file(data, force_document=True)
+                    else:
+                        raise TypeError(f"Unknown command type '{cmd_type}'")
 
+                    # Wait for both the rate-limit and the bot's response
+                    try:
+                        done: Set[asyncio.Future]
+                        resp_task = self.bot.loop.create_task(reply_and_ack())
+                        done, _ = await asyncio.wait((resp_task, asyncio.sleep(0.25)))
+                        # Raise exceptions encountered in coroutines
+                        for fut in done:
+                            fut.result()
 
-# Helpers
+                        response = resp_task.result()
+                        if expected_resp and expected_resp not in response.raw_text:
+                            return False, f'Sticker creation failed: "{response.text}"'
+                    except asyncio.TimeoutError:
+                        after = datetime.now()
+                        delta_seconds = int((after - before).total_seconds())
 
-def is_it_animated_sticker(message):
-    try:
-        if message.media and message.media.document:
-            mime_type = message.media.document.mime_type
-            if "tgsticker" in mime_type:
-                return True
+                        return (
+                            False,
+                            f"Sticker creation timed out after {delta_seconds} seconds.",
+                        )
+
+                success = True
+            finally:
+                # Cancel the operation if we return early
+                if not success:
+                    await conv.send_message("/cancel")
+
+        return True, f"https://t.me/addstickers/{pack_name}"
+
+    @command.desc("Copy a sticker into another pack")
+    @command.alias("stickercopy", "scopy", "copys", "scp", "cps", "kang")
+    @command.usage("[sticker pack short name? if not set] [emoji?]", optional=True)
+    async def cmd_copysticker(self, ctx: command.Context) -> str:
+        if not ctx.msg.is_reply:
+            return "__Reply to a sticker to copy it.__"
+
+        pack_name = None
+        emoji = ""
+
+        for arg in ctx.args:
+            if util.text.has_emoji(arg):
+                # Allow for emoji split across several arguments, since some clients
+                # automatically insert spaces
+                emoji += arg
             else:
-                return False
+                pack_name = arg
+
+        if not pack_name:
+            pack_name = await self.settings_db.get("kang_pack")
+            if not pack_name:
+                return "__Specify the name of the pack to add the sticker to.__"
         else:
-            return False
-    except:
-        return False
+            await self.settings_db.put("kang_pack", pack_name)
 
+        reply_msg = await ctx.msg.get_reply_message()
+        if not reply_msg.sticker:
+            return "__That message isn't a sticker.__"
 
-def is_message_image(message):
-    if message.media:
-        if isinstance(message.media, MessageMediaPhoto):
-            return True
-        if message.media.document:
-            if message.media.document.mime_type.split("/")[0] == "image":
-                return True
-        return False
-    return False
+        await ctx.respond("Copying sticker...")
 
+        sticker_bytes = await reply_msg.download_media(file=bytes)
+        sticker_buf = io.BytesIO(sticker_bytes)
+        await util.image.img_to_png(sticker_buf)
 
-async def silently_send_message(conv, text):
-    await conv.send_message(text)
-    response = await conv.get_response()
-    await conv.mark_read(message=response)
-    return response
+        sticker_buf.seek(0)
+        sticker_buf.name = "sticker.png"
+        status, result = await self.add_sticker(
+            sticker_buf, pack_name, emoji=emoji or reply_msg.file.emoji
+        )
+        if status:
+            await self.bot.log_stat("stickers_created")
+            return f"[Sticker copied]({result})."
 
+        return result
 
-async def stickerset_exists(conv, setname):
-    try:
-        await borg(GetStickerSetRequest(InputStickerSetShortName(setname)))
-        response = await silently_send_message(conv, "/addsticker")
-        if response.text == "Invalid pack selected.":
-            await silently_send_message(conv, "/cancel")
-            return False
-        await silently_send_message(conv, "/cancel")
-        return True
-    except StickersetInvalidError:
-        return False
+    @command.desc("Save a sticker with a name (as a reference)")
+    @command.usage("[new sticker name]")
+    async def cmd_save(self, ctx: command.Context) -> str:
+        name = ctx.input
 
+        if not ctx.msg.is_reply:
+            return "__Reply to a sticker to save it.__"
 
-def resize_image(image, save_locaton):
-    """ Copyright Rhyse Simpson:
-        https://github.com/skittles9823/SkittBot/blob/master/tg_bot/modules/stickers.py
-    """
-    im = Image.open(image)
-    maxsize = (512, 512)
-    if (im.width and im.height) < 512:
-        size1 = im.width
-        size2 = im.height
-        if im.width > im.height:
-            scale = 512 / size1
-            size1new = 512
-            size2new = size2 * scale
+        if await self.db.has(name):
+            return "__There's already a sticker with that name.__"
+
+        reply_msg = await ctx.msg.get_reply_message()
+        if not reply_msg.sticker:
+            return "__That message isn't a sticker.__"
+
+        await self.db.put(name, reply_msg.file.id)
+        return f"Sticker saved as `{name}`."
+
+    @command.desc("Save a sticker with a name (to disk)")
+    @command.usage("[new sticker name]")
+    async def cmd_saved(self, ctx: command.Context) -> str:
+        name = ctx.input
+
+        if not ctx.msg.is_reply:
+            return "__Reply to a sticker to save it.__"
+
+        if await self.db.has(name):
+            return "__There's already a sticker with that name.__"
+
+        reply_msg = await ctx.msg.get_reply_message()
+        if not reply_msg.sticker:
+            return "__That message isn't a sticker.__"
+
+        f_path = Path("stickers") / f"{name}.webp"
+        path = await util.tg.download_file(
+            ctx, reply_msg, dest=f_path, file_type="sticker"
+        )
+        if not path:
+            return "__Error downloading sticker__"
+
+        await self.db.put(name, path)
+        return f"Sticker saved to disk as `{name}`."
+
+    @command.desc("List saved stickers")
+    async def cmd_stickers(self, ctx: command.Context) -> str:
+        out = ["**Stickers saved:**"]
+
+        key: str
+        value: str
+        async for key, value in self.db:
+            typ = "local" if value.endswith(".webp") else "reference"
+            out.append(f"{key} ({typ})")
+
+        if len(out) == 1:
+            return "__No stickers saved.__"
+
+        return util.text.join_list(out)
+
+    @command.desc("List locally saved stickers")
+    async def cmd_stickersp(self, ctx: command.Context) -> str:
+        out = ["**Stickers saved:**"]
+
+        key: str
+        value: str
+        async for key, value in self.db:
+            if value.endswith(".webp"):
+                out.append(key)
+
+        if len(out) == 1:
+            return "__No stickers saved.__"
+
+        return util.text.join_list(out)
+
+    @command.desc("Delete a saved sticker")
+    @command.usage("[sticker name]")
+    async def cmd_sdel(self, ctx: command.Context) -> str:
+        name = ctx.input
+
+        if not await self.db.has(name):
+            return "__That sticker doesn't exist.__"
+
+        await self.db.delete(name)
+        return f"Sticker `{name}` deleted."
+
+    @command.desc("Fetch a sticker by name")
+    @command.usage("[sticker name]")
+    async def cmd_s(self, ctx: command.Context) -> Optional[str]:
+        name = ctx.input
+
+        path = await self.db.get(name)
+        if path is None:
+            return "__That sticker doesn't exist.__"
+
+        await ctx.respond("Uploading sticker...")
+        await ctx.respond(file=path, mode="repost")
+
+    @command.desc("Fetch a sticker by name and send it as a photo")
+    @command.usage("[sticker name]")
+    @command.alias("sphoto")
+    async def cmd_sp(self, ctx: command.Context) -> Optional[str]:
+        name = ctx.input
+
+        _webp_path: Optional[str] = await self.db.get(name)
+        if _webp_path is None:
+            return "__That sticker doesn't exist.__"
+
+        webp_path = Path(_webp_path)
+        if webp_path.suffix != ".webp":
+            return "__That sticker can't be sent as a photo.__"
+
+        await ctx.respond("Uploading sticker...")
+        png_path = webp_path.with_suffix(".png")
+        if not os.path.isfile(png_path):
+            await util.image.img_to_png(webp_path, dest=png_path)
+
+        await ctx.respond(file=png_path, mode="repost")
+        return None
+
+    @command.desc("Create a sticker from an image and add it to the given pack")
+    @command.usage("[sticker pack name] [emoji to associate?]")
+    async def cmd_sticker(self, ctx: command.Context) -> Optional[str]:
+        if not (ctx.msg.is_reply or ctx.msg.file):
+            return "__Reply to or embed an image to sticker it.__"
+
+        reply_msg = ctx.msg if ctx.msg.file else await ctx.msg.get_reply_message()
+        if not reply_msg.file:
+            return "__That message doesn't contain an image.__"
+
+        pack_name = ctx.args[0]
+        emoji = ctx.args[1] if len(ctx.args) > 1 else "❓"
+
+        await ctx.respond("Creating sticker...")
+
+        sticker_bytes = await reply_msg.download_media(file=bytes)
+        sticker_buf = io.BytesIO(sticker_bytes)
+
+        png_buf = io.BytesIO()
+        webp_buf = io.BytesIO()
+        await util.image.img_to_sticker(sticker_buf, {"png": png_buf, "webp": webp_buf})
+
+        png_buf.seek(0)
+        png_buf.name = "sticker.png"
+        status, result = await self.add_sticker(png_buf, pack_name, emoji=emoji)
+        if status:
+            await self.bot.log_stat("stickers_created")
+            await ctx.respond(f"[Sticker created]({result}). Preview:")
+
+            webp_buf.seek(0)
+            webp_buf.name = "sticker.webp"
+            await ctx.msg.respond(file=webp_buf)
+            return None
+
+        return result
+
+    @command.desc(
+        "Create a sticker from an image and save it to disk under the given name"
+    )
+    @command.usage("[new sticker name]")
+    async def cmd_qstick(self, ctx: command.Context) -> str:
+        name = ctx.input
+
+        if not (ctx.msg.is_reply or ctx.msg.file):
+            return "__Reply to an image to sticker it.__"
+
+        if await self.db.has(name):
+            return "__There's already a sticker with that name.__"
+
+        reply_msg = ctx.msg if ctx.msg.file else await ctx.msg.get_reply_message()
+        if not reply_msg.file:
+            return "__That message isn't an image.__"
+
+        await ctx.respond("Creating sticker...")
+
+        sticker_bytes = await reply_msg.download_media(file=bytes)
+        sticker_buf = io.BytesIO(sticker_bytes)
+
+        path = Path("stickers") / f"{name}.webp"
+        await util.image.img_to_sticker(sticker_buf, {"webp": path})
+
+        await self.db.put(name, str(path))
+        await self.bot.log_stat("stickers_created")
+        return f"Sticker saved to disk as `{name}`."
+
+    @command.desc("Glitch an image")
+    @command.usage("[block offset strength?]", optional=True)
+    async def cmd_glitch(self, ctx: command.Context) -> Optional[str]:
+        if not (ctx.msg.is_reply or ctx.msg.file):
+            return "__Reply to an image to glitch it.__"
+
+        offset = 8
+        if ctx.input:
+            try:
+                offset = int(ctx.input)
+            except ValueError:
+                return "__Invalid distorted block offset strength.__"
+
+        reply_msg = ctx.msg if ctx.msg.file else await ctx.msg.get_reply_message()
+        if not reply_msg.file:
+            return "__That message isn't an image.__"
+
+        await ctx.respond("Glitching image...")
+
+        orig_bytes = await reply_msg.download_media(file=bytes)
+
+        # Convert to PNG if necessary
+        if orig_bytes.startswith(PNG_MAGIC):
+            png_bytes = orig_bytes
         else:
-            scale = 512 / size2
-            size1new = size1 * scale
-            size2new = 512
-        size1new = math.floor(size1new)
-        size2new = math.floor(size2new)
-        sizenew = (size1new, size2new)
-        im = im.resize(sizenew)
-    else:
-        im.thumbnail(maxsize)
-    im.save(save_locaton, "PNG")
+            png_buf = io.BytesIO(orig_bytes)
+            await util.image.img_to_png(png_buf)
+            png_bytes = png_buf.getvalue()
 
+        # Invoke external 'corrupter' program to glitch the image
+        # Source code: https://github.com/r00tman/corrupter
+        try:
+            stdout, stderr, ret = await util.system.run_command(
+                "corrupter",
+                "-boffset",
+                str(offset),
+                "-",
+                stderr=asyncio.subprocess.PIPE,
+                in_data=png_bytes,
+                text=util.system.StderrOnly,
+                timeout=15,
+            )
+        except asyncio.TimeoutError:
+            return "🕑 `corrupter` failed to finish within 15 seconds."
+        except FileNotFoundError:
+            return "❌ The `corrupter` [program](https://github.com/r00tman/corrupter) must be installed on the host system."
 
-def progress(current, total):
-    logger.info("Uploaded: {} of {}\nCompleted {}".format(current, total, (current / total) * 100))
+        if ret != 0:
+            return (
+                f"⚠️ `corrupter` failed with return code {ret}. Error: ```{stderr}```"
+            )
 
-
-def find_instance(items, class_or_tuple):
-    for item in items:
-        if isinstance(item, class_or_tuple):
-            return item
-    return None
-
-
-def zipdir(path, ziph):
-    # ziph is zipfile handle
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            ziph.write(os.path.join(root, file))
-            os.remove(os.path.join(root, file))
+        await ctx.respond(file=stdout, mode="repost")
+        return None
