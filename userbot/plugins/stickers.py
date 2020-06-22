@@ -56,9 +56,9 @@ async def _(event):
         packname = f"IndianBhaikeStickers"
         packshortname = "IndianBhai_ke_locker_me"
     else:
-        packname = f"{DEFAULTUSER}'s Kang Pack Vol.{pack}"
-        packshortname = f"{userid}_kang"
-    await event.edit("`kanging sticker..")
+        packname = f"{DEFAULTUSER}'s IndianBot Vol.{pack}"
+        packshortname = f"IndianBot_{userid}_kang"
+    await event.edit("`Look dat way,it's a gurl!\nMeanwhile, lemme kang this stcker over hehe ヽ༼ ಠ益ಠ ༽ﾉ`")
 
     is_a_s = is_it_animated_sticker(reply_message)
     file_ext_ns_ion = "@IndianArMyGiveaway.png"
@@ -71,8 +71,8 @@ async def _(event):
             packname = f"IndiaBhaikeAnimeted"
             packshortname = "IndianBhai_ke_Animated"
         else:
-            packname = f"{DEFAULTUSER}'s Animated kang pack Vol.{pack}"
-            packshortname = f"{userid}" # format: Uni_Borg_userid
+            packname = f"{DEFAULTUSER}'s IndianBot Animated Vol.{pack}"
+            packshortname = f"IndianBot_{userid}" # format: Uni_Borg_userid
     elif not is_message_image(reply_message):
         await event.edit("Invalid message type")
         return
@@ -403,4 +403,4 @@ def zipdir(path, ziph):
     for root, dirs, files in os.walk(path):
         for file in files:
             ziph.write(os.path.join(root, file))
-            os.remove(os.path.join(root, file))  
+            os.remove(os.path.join(root, file))
