@@ -56,8 +56,8 @@ async def _(event):
         packname = f"IndianBhaikeStickers"
         packshortname = "IndianBhai_ke_locker_me"
     else:
-        packname = f"{DEFAULTUSER}'s IndianBot Vol.{pack}"
-        packshortname = f"IndianBot_{userid}_kang"
+        packname = f"{DEFAULTUSER}'s Kang Pack Vol.{pack}"
+        packshortname = f"sharooz_kang"
     await event.edit("`Look dat way,it's a gurl!\nMeanwhile, lemme kang this stcker over hehe ヽ༼ ಠ益ಠ ༽ﾉ`")
 
     is_a_s = is_it_animated_sticker(reply_message)
@@ -71,8 +71,8 @@ async def _(event):
             packname = f"IndiaBhaikeAnimeted"
             packshortname = "IndianBhai_ke_Animated"
         else:
-            packname = f"{DEFAULTUSER}'s IndianBot Animated Vol.{pack}"
-            packshortname = f"IndianBot_{userid}" # format: Uni_Borg_userid
+            packname = f"{DEFAULTUSER}'s Animated Vol.{pack}"
+            packshortname = f"Sharooz_{userid}" # format: Uni_Borg_userid
     elif not is_message_image(reply_message):
         await event.edit("Invalid message type")
         return
